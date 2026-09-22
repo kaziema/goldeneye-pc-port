@@ -76,6 +76,14 @@ docs/HANDOFF.md
 docs/BACKLOG.md
 docs/dev/notes/
 
+# Vita port (see Makefile.vita)
+*.vpk
+*.velf
+*.elf
+*.elf.unstripped.elf
+eboot.bin
+param.sfo
+
 # PC port (see CMakeLists.txt / port/)
 build-pc/
 tools_pc/*.exe

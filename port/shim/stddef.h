@@ -10,7 +10,13 @@
  *
  * Inert in the N64 build (port/shim is not on its include path).
  */
-#if defined(__cplusplus)
+#if defined(__vita__)
+/* newlib's sys/_types.h does __need_wint_t + #include <stddef.h> to get
+ * wint_t; this shim shadows the real one on the -I path. Unguarded
+ * passthrough (vitastddef.h) so the real header's own __need_* re-entry
+ * logic still works — hoststddef.h's one-shot guard would break it. */
+#include "vitastddef.h"
+#elif defined(__cplusplus)
 /* MinGW's <stdint.h> does:
  *     #define __need_wint_t
  *     #define __need_wchar_t

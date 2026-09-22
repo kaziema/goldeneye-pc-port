@@ -1,0 +1,215 @@
+# GoldenEye 007 — PSVita port build.
+# Hand-written (no CMake toolchain exists for Vita in this ecosystem).
+# Parallel to CMakeLists.txt (PC) and Makefile (N64) — neither touched here.
+# Source lists mirror CMakeLists.txt; VPK/LiveArea packaging adapted from
+# papermario-pc-upload/Makefile.vita.
+#
+# STATUS: scaffold, does not link yet.
+#   - gfx_opengl.cpp/gfx_sdl2.cpp still target desktop GL/SDL2, need vitaGL
+#     forks (research doc §3 steps 3-4).
+#   - No Vita entry point yet (§3 step 5).
+#   - UNRESOLVED: dram_syms.s / romassets_u.s rely on fixed-address absolute
+#     symbols (0x10000000-0x80050000). The PC build forces a fixed load base
+#     to make that work; Vita's loader doesn't give us that lever the same
+#     way. Not fixed here — see port/src/dram.c mmap() usage.
+#
+# Usage: make -f Makefile.vita
+
+TARGET  := GE007Vita
+TITLE   := GEVT00001
+
+PREFIX  := arm-vita-eabi
+CC      := $(PREFIX)-gcc
+CXX     := $(PREFIX)-g++
+STRIP   := $(PREFIX)-strip
+
+# NTSC-US only — PAL/JP asset gen is broken upstream (issue #85).
+ASSET_REGION := u
+
+# -----------------------------------------------------------------------------
+# Generated headers (CMake normally does this via configure_file())
+# -----------------------------------------------------------------------------
+
+GEN_DIR := build-vita/port/include
+VITA_SYSROOT_INCLUDE := $(VITASDK)/$(PREFIX)/include
+
+GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null)
+ifeq ($(GIT_HASH),)
+GIT_HASH := unknown
+endif
+
+$(GEN_DIR):
+	mkdir -p $(GEN_DIR)
+
+$(GEN_DIR)/versioninfo.h: port/include/versioninfo.h.in | $(GEN_DIR)
+	sed -e 's|@VERSION_HASH@|$(GIT_HASH)|' \
+	    -e 's|@VERSION_CODENAME@|larkspur|' \
+	    -e 's|@ORIGIN_URL@|https://github.com/jkdansereau/goldeneye-pc-port|' \
+	    -e 's|@TARGET_PLATFORM@|arm-vita|' \
+	    -e 's|@ROMID@|ntsc-final|' \
+	    -e 's|@VERSION_IS_PAL@|0|' \
+	    $< > $@
+
+$(GEN_DIR)/hoststring.h: port/include/hoststring.h.in | $(GEN_DIR)
+	sed -e 's|@PORT_HOST_STRING_H@|$(VITA_SYSROOT_INCLUDE)/string.h|' $< > $@
+
+$(GEN_DIR)/hostsched.h: port/include/hostsched.h.in | $(GEN_DIR)
+	sed -e 's|@PORT_HOST_SCHED_H@|$(VITA_SYSROOT_INCLUDE)/sched.h|' $< > $@
+
+$(GEN_DIR)/hoststdlib.h: port/include/hoststdlib.h.in | $(GEN_DIR)
+	sed -e 's|@PORT_HOST_STDLIB_H@|$(VITA_SYSROOT_INCLUDE)/stdlib.h|' $< > $@
+
+# stddef.h is compiler-internal, not under the sysroot include dir.
+VITA_GCC_STDDEF_H := $(shell $(CC) -print-file-name=include/stddef.h)
+
+$(GEN_DIR)/hoststddef.h: port/include/hoststddef.h.in | $(GEN_DIR)
+	sed -e 's|@PORT_HOST_STDDDEF_H@|$(VITA_GCC_STDDEF_H)|' $< > $@
+
+# Unguarded passthrough to real stddef.h — see port/shim/stddef.h __vita__ branch.
+$(GEN_DIR)/vitastddef.h: | $(GEN_DIR)
+	printf '#include "%s"\n' "$(VITA_GCC_STDDEF_H)" > $@
+
+$(GEN_DIR)/realzlib.h: port/include/realzlib.h.in | $(GEN_DIR)
+	sed -e 's|@PORT_REAL_ZLIB_H@|$(VITA_SYSROOT_INCLUDE)/zlib.h|' $< > $@
+
+GENERATED_HEADERS := $(GEN_DIR)/versioninfo.h $(GEN_DIR)/hoststring.h \
+	$(GEN_DIR)/hostsched.h $(GEN_DIR)/hoststdlib.h $(GEN_DIR)/hoststddef.h \
+	$(GEN_DIR)/vitastddef.h $(GEN_DIR)/realzlib.h
+
+# -----------------------------------------------------------------------------
+# Source discovery (mirrors CMakeLists.txt SRC_*)
+# -----------------------------------------------------------------------------
+
+SRC_GAME := $(shell find src/game -name '*.c' \
+	-not -name 'decompress.c' -not -name 'zlib.c')
+
+SRC_PORT_C := $(shell find port/src -name '*.c')
+# glad excluded: vitaGL provides its own GL entry points, no loader needed.
+SRC_FAST3D_CPP := $(shell find port/fast3d -maxdepth 1 -name '*.cpp')
+SRC_PORT_CXX := $(shell find port/src -name '*.cpp')
+
+SRC_ROMASSETS := port/src/romassets_$(ASSET_REGION).s
+SRC_DRAM_SYMS := port/src/dram_syms.s
+
+SRC_LIBAUDIO          := $(shell find src/libultra/audio -name '*.c')
+SRC_LIBULTRARE_AUDIO  := $(shell find src/libultrare/audio -name '*.c')
+SRC_LIBULTRARE_DATA   := src/libultrare/io/vitbl.c
+SRC_LIBULTRARE_LIBC   := src/libultrare/libc/xprintf.c \
+	src/libultra/libc/xlitob.c src/libultra/libc/xldtob.c
+SRC_GU := $(shell find src/libultra/gu -name '*.c')
+
+SRC_ASSETS := assets/font_chardatae.c assets/font_chardataj.c \
+	assets/font_dl.c assets/oddtextures.c assets/rarewarelogo.c
+
+SRC_ENGINE := src/init.c src/sched.c src/audi.c src/snd.c src/music.c \
+	src/joy.c src/fr.c src/stacks.c src/boss.c src/mema.c src/memp.c \
+	src/deb.c src/debugmenu.c src/speed_graph.c src/token.c src/str.c \
+	src/sprintf.c src/ramrom.c
+
+CFILES := $(SRC_GAME) $(SRC_PORT_C) $(SRC_LIBAUDIO) $(SRC_LIBULTRARE_AUDIO) \
+	$(SRC_LIBULTRARE_DATA) $(SRC_LIBULTRARE_LIBC) $(SRC_GU) $(SRC_ASSETS) \
+	$(SRC_ENGINE)
+CPPFILES := $(SRC_PORT_CXX) $(SRC_FAST3D_CPP)
+SFILES := $(SRC_ROMASSETS) $(SRC_DRAM_SYMS)
+
+OBJS := $(CFILES:.c=.o) $(CPPFILES:.cpp=.o) $(SFILES:.s=.o)
+
+# -----------------------------------------------------------------------------
+# Includes / flags
+# -----------------------------------------------------------------------------
+
+INCLUDES := $(GEN_DIR) port/shim . include include/PR src src/game \
+	src/libultra src/libultra/audio port/include \
+	$(VITA_SYSROOT_INCLUDE)/SDL2
+
+# Must match CMakeLists.txt REGION_DEFS for ROMID=ntsc-final (AGENTS.md #3).
+REGION_DEFS := -DVERSION_US -DLANG_US -DREFRESH_NTSC \
+	-DLEFTOVERDEBUG -DLEFTOVERSPECTRUM -DBUGFIX_R0 -DBYTEMATCH
+
+# Not carried over from the PC build's linker flags: -fno-pie /
+# -Wl,-Ttext-segment=0x20000000 / --disable-dynamicbase — no Vita equivalent yet.
+COMMON_FLAGS := -g -O2 -fno-strict-aliasing -funsigned-char -fwrapv \
+	-fno-stack-protector -fno-omit-frame-pointer \
+	-include versioninfo.h \
+	$(foreach dir,$(INCLUDES),-I$(dir)) \
+	-D__vita__ \
+	-DPORT=1 -D_LANGUAGE_C=1 -DAVOID_UB=1 -DPAL=0 $(REGION_DEFS) \
+	-Wall -Wno-address -Wno-misleading-indentation -Wno-missing-braces \
+	-Wno-multichar -Wno-tautological-compare -Wno-unused-but-set-variable \
+	-Wno-unused-value -Wno-unused-variable \
+	-Wno-error=int-conversion -Wno-error=incompatible-pointer-types \
+	-Wno-error=implicit-function-declaration
+
+CFLAGS   := $(COMMON_FLAGS) -std=gnu11 -fplan9-extensions -fpermissive -Wno-pointer-sign
+CXXFLAGS := $(COMMON_FLAGS) -std=gnu++20 -Wno-unused-function
+ASFLAGS  := -g $(foreach dir,$(INCLUDES),-I$(dir))
+
+# -----------------------------------------------------------------------------
+# Libraries
+# -----------------------------------------------------------------------------
+# --whole-archive/pthread: vitasdk gotcha, force-links pthread-embedded's
+# overrides of newlib's stub pthread symbols.
+# Stub-lib set below is unverified against a real link — trim once gfx
+# backends build and the linker names what's actually missing.
+LIBS := -lstdc++ \
+	-Wl,--whole-archive -lpthread -Wl,--no-whole-archive \
+	-Wl,--start-group \
+	-lz -lmathneon -lvitaGL -lvitashark -lSceShaccCgExt \
+	-lSDL2main -lSDL2 \
+	-lSceCtrl_stub -lSceGxm_stub -lSceDisplay_stub \
+	-lSceAudio_stub -lSceAudioIn_stub -lSceSysmodule_stub \
+	-lSceAppMgr_stub -lSceAppUtil_stub -lScePower_stub \
+	-lSceCommonDialog_stub -lSceTouch_stub -lSceMotion_stub \
+	-lSceHid_stub -lSceKernelDmacMgr_stub -lSceShaccCg_stub \
+	-Wl,--end-group
+
+# -----------------------------------------------------------------------------
+# Build rules
+# -----------------------------------------------------------------------------
+
+all: $(TARGET).vpk
+
+# LiveArea images must be 8-bit indexed PNG or install fails (0x8010113D).
+check-livearea:
+	@for f in livearea/icon0.png livearea/bg.png livearea/startup.png; do \
+		if ! file "$$f" | grep -q "8-bit colormap"; then \
+			echo "ERROR: $$f is not 8-bit indexed (Vita install will fail with 0x8010113D)"; \
+			file "$$f"; \
+			exit 1; \
+		fi; \
+	done
+	@echo "livearea images OK (8-bit indexed)"
+
+$(TARGET).vpk: $(TARGET).velf check-livearea
+	vita-make-fself -c -s $< eboot.bin
+	vita-mksfoex -s TITLE_ID=$(TITLE) -d ATTRIBUTE2=12 "$(TARGET)" param.sfo
+	vita-pack-vpk -s param.sfo -b eboot.bin $(TARGET).vpk \
+		-a livearea/icon0.png=sce_sys/icon0.png \
+		-a livearea/bg.png=sce_sys/livearea/contents/bg.png \
+		-a livearea/startup.png=sce_sys/livearea/contents/startup.png \
+		-a livearea/template.xml=sce_sys/livearea/contents/template.xml
+
+%.velf: %.elf
+	cp $< $<.unstripped.elf
+	$(STRIP) -g $<
+	vita-elf-create $< $@
+
+$(TARGET).elf: $(GENERATED_HEADERS) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(OBJS) $(LIBS) -o $@
+
+%.o: %.c $(GENERATED_HEADERS)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+%.o: %.cpp $(GENERATED_HEADERS)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+%.o: %.s $(GENERATED_HEADERS)
+	$(CC) $(ASFLAGS) -c $< -o $@
+
+objects: $(OBJS)
+
+clean:
+	@rm -rf build-vita $(TARGET).elf $(TARGET).elf.unstripped.elf $(TARGET).velf eboot.bin $(TARGET).vpk param.sfo
+	@find src port assets -name '*.o' -delete
+
+.PHONY: all objects clean check-livearea

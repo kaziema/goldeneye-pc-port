@@ -23,6 +23,8 @@
   #endif
 #elif defined(__linux__)
   #define PLATFORM_LINUX 1
+#elif defined(__vita__)
+  #define PLATFORM_VITA 1
 #else
   #error "Unsupported platform"
 #endif
@@ -35,7 +37,7 @@
   #define PLATFORM_X86 1
 #elif defined(_M_X64) || defined(__x86_64__)
   #define PLATFORM_X86_64 1
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__arm__)
   #define PLATFORM_ARM 1
 #endif
 
