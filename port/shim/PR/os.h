@@ -30,8 +30,16 @@
 #if defined(PORT)
 #    include "include/PR/os.h"
 
-#    undef OS_K0_TO_PHYSICAL
-#    define OS_K0_TO_PHYSICAL(x) ((u32)((char *)(x) - 0x70000000))
+#    if defined(__vita__)
+/* No fixed base on Vita — g_vitaDramBase is runtime (port/src/dram.c). */
+#        include <stdint.h>
+extern uintptr_t g_vitaDramBase;
+#        undef OS_K0_TO_PHYSICAL
+#        define OS_K0_TO_PHYSICAL(x) ((u32)((char *)(x) - g_vitaDramBase))
+#    else
+#        undef OS_K0_TO_PHYSICAL
+#        define OS_K0_TO_PHYSICAL(x) ((u32)((char *)(x) - 0x70000000))
+#    endif
 
 #    undef OS_PHYSICAL_TO_K0
 #    define OS_PHYSICAL_TO_K0(x) ((void *)(x))

@@ -1085,7 +1085,9 @@ void indyGrabJpg32bit(void)
     }
 
     sprintf(buffer, "grab.%d.temp.Uix", *pgrabnum);
-    indycommHostSendDump((u8*)&buffer, (u8*)&cfb_16, (viGetX() * viGetY() * 4));
+    /* cfb_16, not &cfb_16: same address for a real array, but cfb_16 is a
+     * pointer variable on Vita (port/src/dram.c). */
+    indycommHostSendDump((u8*)&buffer, (u8*)cfb_16, (viGetX() * viGetY() * 4));
 
     sprintf(buffer, "Uix2pix -xs%d grab.%d.temp.Uix", viGetX(), *pgrabnum);
     indycommHostSendCmd((u8*)&buffer);
@@ -1166,7 +1168,9 @@ void indyGrabRgb32bit(void)
     }
 
     sprintf(buffer, "grab.%d.temp.Uix", *pgrabnum);
-    indycommHostSendDump((u8*)&buffer, (u8*)&cfb_16, (viGetX() * viGetY() * 4));
+    /* cfb_16, not &cfb_16: same address for a real array, but cfb_16 is a
+     * pointer variable on Vita (port/src/dram.c). */
+    indycommHostSendDump((u8*)&buffer, (u8*)cfb_16, (viGetX() * viGetY() * 4));
 
     sprintf(buffer, "Uix2pix -xs%d grab.%d.temp.Uix", viGetX(), *pgrabnum);
     indycommHostSendCmd((u8*)&buffer);

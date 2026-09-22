@@ -667,7 +667,12 @@ void gfx_texture_cache_delete_range(const uint8_t* start, const uint8_t* end) {
 static bool gfx_tex_source_is_c_array(const uint8_t* addr) {
     const uintptr_t a = (uintptr_t)addr;
     if (a >= 0x10000000u && a < 0x20000000u) return false; // cart map + sidecar
+#if defined(__vita__)
+    extern uintptr_t g_vitaDramBase; // port/src/dram.c — one 8 MB region, no fixed base
+    if (a >= g_vitaDramBase && a < g_vitaDramBase + 0x00800000u) return false;
+#else
     if (a >= 0x70000000u && a < 0x90000000u) return false; // V1 dram + KSEG0 mirror
+#endif
     return true; // exe image: C-compiled array
 }
 
@@ -3320,7 +3325,12 @@ static inline void *seg_addr(uintptr_t w1) {
     // in the reserved N64-DRAM region (port/src/dram.c); map it back. The
     // region is 8 MB, so any offset below 0x800000 came from there.
     if (w1 < 0x800000) {
+#if defined(__vita__)
+        extern uintptr_t g_vitaDramBase; // port/src/dram.c — no fixed 0x80000000 mirror here
+        return (void *)(w1 + g_vitaDramBase);
+#else
         return (void *)(w1 + 0x80000000);
+#endif
     }
     // D131: a GBI DL built by game code can reference a COMPILED symbol via
     // osVirtualToPhysical() (a u32-returning shim), which truncates the

@@ -27,6 +27,9 @@
 #include "fs.h"
 #include "romdata.h"
 #include "dram.h"
+#if defined(__vita__)
+#include "initanitable.h" /* src/game — on the include path (see Makefile.vita) */
+#endif
 #include "video.h"
 #include "audio.h"
 #include "input.h"
@@ -190,6 +193,9 @@ int main(int argc, char **argv)
     /* 2b. Reserve the N64-DRAM region: s32-safe view @ 0x70000000 (cfb_16,
      *     mempools) + KSEG0 mirror @ 0x80000000 (see port/src/dram.c). */
     dramReserve();
+#if defined(__vita__)
+    initanitableVitaFixup(); /* animations_frame_buffer only known post-dramReserve() */
+#endif
 
     /* 3. Video / audio / input. */
     if (videoInit() != 0) {

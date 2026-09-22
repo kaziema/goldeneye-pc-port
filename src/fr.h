@@ -175,7 +175,14 @@ extern u32 g_viOriginalVstart1;
 extern Mtx *g_viProjectionMatrix;
 
 /* SCREEN_HEIGHT #define changes based on version (PAL or NTSC) */
+#if defined(__vita__)
+/* Runtime pointer, not array — no fixed-address mapping on Vita (dram.c).
+ * `cfb_16[i]` still works; bare `&cfb_16` sites (fr.c, crash.c) were changed
+ * to plain `cfb_16` since that means something else on a pointer. */
+extern u8 (*cfb_16)[SCREEN_WIDTH * SCREEN_HEIGHT * 2];
+#else
 extern u8 cfb_16[NUM_VIDEO_FRAME_BUFFERS][SCREEN_WIDTH * SCREEN_HEIGHT * 2];
+#endif
 
 void viShake(f32 param_1);
 

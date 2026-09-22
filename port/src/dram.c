@@ -48,9 +48,13 @@
 
 #include "platform.h"
 #include "system.h"
+#include "fr.h" /* cfb_16 */
 
 #if defined(PLATFORM_WINDOWS)
 #include <windows.h>
+#elif defined(__vita__)
+#include <psp2/kernel/sysmem.h>
+#include <stdint.h>
 #else
 #define _GNU_SOURCE /* memfd_create — must precede all system headers */
 #include <sys/mman.h>
@@ -60,6 +64,14 @@
 #define DRAM_V1_BASE   0x70000000UL /* s32-safe "virtual" view */
 #define DRAM_K0_BASE   0x80000000UL /* KSEG0 mirror view */
 #define DRAM_SIZE      0x00800000UL /* 8 MB */
+
+#if defined(__vita__)
+/* No fixed-address mapping on Vita. One view, wherever the kernel puts it. */
+uintptr_t g_vitaDramBase;
+
+extern u32 *_bssSegmentEnd;
+extern char (*animations_frame_buffer)[0x2D0];
+#endif
 
 void *dramReserve(void)
 {
@@ -100,6 +112,31 @@ void *dramReserve(void)
 
     CloseHandle(hSec);
     return v1;
+#elif defined(__vita__)
+    /* No way to request an address on Vita; fail loud if it's unsafe instead
+     * of silently corrupting s32-carried pointers. */
+    SceUID blockId = sceKernelAllocMemBlock("ge007_dram", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW,
+                                             DRAM_SIZE, NULL);
+    if (blockId < 0) {
+        sysFatalError("dram: sceKernelAllocMemBlock failed (0x%08X)", (unsigned)blockId);
+    }
+
+    void *base = NULL;
+    if (sceKernelGetMemBlockBase(blockId, &base) < 0 || !base) {
+        sysFatalError("dram: sceKernelGetMemBlockBase failed");
+    }
+
+    uintptr_t baseAddr = (uintptr_t)base;
+    if (baseAddr + DRAM_SIZE > 0x80000000UL) {
+        sysFatalError("dram: block at %p, needs to be below 0x80000000", base);
+    }
+
+    g_vitaDramBase = baseAddr;
+    cfb_16 = (u8 (*)[SCREEN_WIDTH * SCREEN_HEIGHT * 2])(baseAddr + 0x000000);
+    _bssSegmentEnd = (u32 *)(baseAddr + 0x050000);
+    animations_frame_buffer = (char (*)[0x2D0])(baseAddr + 0x7FFD30);
+
+    return base;
 #else
     /* memfd + two MAP_SHARED mmaps = one backing store, two views. */
     int fd = memfd_create("ge007_dram", 0);

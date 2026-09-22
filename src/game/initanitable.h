@@ -40,4 +40,10 @@ extern s32 animation_table_ptrs1[];
 */
 extern s32 animation_table_ptrs2[];
 
+#if defined(__vita__)
+/* Sets D_80029D60's animBufferPtr1/2 once animations_frame_buffer is known
+ * (port/src/dram.c). Call once, right after dramReserve(). */
+void initanitableVitaFixup(void);
+#endif
+
 #endif

@@ -3,7 +3,7 @@
 
 #include <ultra64.h>
 
-#include <sched.h>
+#include "../sched.h" /* bypass port/shim/sched.h — vitasdk's pthread.h needs the real one */
 #include <PR/gbi.h>
 #include <PR/os.h>
 #include <PR/sptask.h>

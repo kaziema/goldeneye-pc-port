@@ -261,7 +261,12 @@ void bossInitMainthreadData(void)
         g_CurentMMallocValue = (s32) (strtol(tokenFind(1, "-m"), 0, 0) << 0xa);
     }
 
+#if defined(__vita__)
+    /* _bssSegmentEnd is a real pointer variable here, not a link-time symbol. */
+    start = (PHYS_TO_K0(osVirtualToPhysical(_bssSegmentEnd)));
+#else
     start = (PHYS_TO_K0(osVirtualToPhysical(&_bssSegmentEnd)));
+#endif
     mempCheckMemflagTokens(start, ((u32)tlbmanageGetTlbAllocatedBlock() - (u32)start));
     mempResetBank(MEMPOOL_PERMANENT);
     langInit();

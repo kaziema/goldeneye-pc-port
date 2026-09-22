@@ -103,7 +103,12 @@ u8 (*tlbmanageGetTlbAllocatedBlock(void))[TLB_BLOCK_SIZE]
      * area; the extra goes to MEMPOOL_STAGE (boss.c:218 gives STAGE
      * everything that isn't the fixed PERMANENT bank). Stays well clear of
      * animations_frame_buffer. */
+#if defined(__vita__)
+    extern uintptr_t g_vitaDramBase; // port/src/dram.c — offset stays +0x700000, base doesn't
+    return (u8 (*)[TLB_BLOCK_SIZE])(g_vitaDramBase + 0x700000);
+#else
     return (u8 (*)[TLB_BLOCK_SIZE])0x70700000;
+#endif
 }
 
 /* --- K&R libc helpers (IDO provided these; MinGW's libc does not) -------- */

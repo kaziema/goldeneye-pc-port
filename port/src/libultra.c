@@ -414,13 +414,14 @@ void osCreateThread(OSThread *t, OSId id, void (*entry)(void *), void *arg,
     t->state = OS_STATE_STOPPED;
 }
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__vita__)
 #include <sys/mman.h>
 /* The decomp aligns/compares stack-buffer pointers by truncating to u32
  * (e.g. `(u32)compbuffer` in image.c texLoad) — an N64 assumption. glibc
  * puts pthread stacks above 4 GiB, so those truncations corrupt. Force each
  * game-thread stack into the low 2 GiB with MAP_32BIT so every such idiom
- * works exactly as on the console. Windows pthread stacks are already low. */
+ * works exactly as on the console. Windows pthread stacks are already low.
+ * N/A on Vita (32-bit ARM, everything's already below 4 GiB). */
 static void *portAllocLowStack(size_t sz)
 {
 #if defined(MAP_32BIT)
@@ -447,7 +448,7 @@ void osStartThread(OSThread *t)
     pthread_attr_t attr;
     int rc;
     pthread_attr_init(&attr);
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__vita__)
     void *lowStack = portAllocLowStack(PORT_THREAD_STACK);
     if (lowStack)
         pthread_attr_setstack(&attr, lowStack, PORT_THREAD_STACK);
@@ -906,11 +907,17 @@ static int s_d61opened = 0;
 
 static int dramHostAddrValid(uintptr_t addr, u32 size)
 {
+#if defined(__vita__)
+    extern uintptr_t g_vitaDramBase; // port/src/dram.c — one region, no fixed base/mirror
+    if (addr >= g_vitaDramBase && addr + size <= g_vitaDramBase + 0x00800000UL)
+        return 1;
+#else
     static const uintptr_t bases[2] = { 0x70000000UL, 0x80000000UL };
     for (int i = 0; i < 2; i++) {
         if (addr >= bases[i] && addr + size <= bases[i] + 0x00800000UL)
             return 1;
     }
+#endif
     /* Any other host-committed region is a legitimate DMA target: .bss/.data
      * buffers (e.g. ramrom_data_target), stack compbuffers, sidecar images.
      * Truncated wild addresses (0x40xxxxxx from s32 pointer math) are not

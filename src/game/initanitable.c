@@ -10,7 +10,10 @@
 //bss
 
 // Where animation frames are saved. Can possibly hold as much as nine, but the game will ever store four at maximum.
-#ifdef PORT
+#if defined(__vita__)
+/* Runtime pointer, not array — dram.c sets it, no fixed address on Vita. */
+extern char (*animations_frame_buffer)[0x2D0];
+#elif defined(PORT)
 /* D59: relocated into DRAM by port/src/dram_syms.s (absolute symbol at
  * 0x707FFD30) because loadAnimationFrame() addresses it through s32 fields
  * and a (u32) cast — PC BSS (0x140xxxxxx) would truncate to a wild pointer.
@@ -29,11 +32,22 @@ OSMesg animMesg[8];
 struct animation_table_data * ptr_animation_table;
 
 //data
+#if defined(__vita__)
+/* animations_frame_buffer isn't known until dram.c runs; fixed up below. */
+struct bondstruct_unk_animation_related D_80029D60 = { NULL, NULL, NULL };
+
+void initanitableVitaFixup(void)
+{
+    D_80029D60.animBufferPtr1 = (char *)animations_frame_buffer;
+    D_80029D60.animBufferPtr2 = (char *)animations_frame_buffer;
+}
+#else
 struct bondstruct_unk_animation_related D_80029D60 = {
     NULL,
     &animations_frame_buffer, // Two pointers. One always points to the start of the buffer, the other can be modified.
     &animations_frame_buffer
 };
+#endif
 
 s32 animation_table_ptrs1[] = {
     PTR_ANIM_idle,

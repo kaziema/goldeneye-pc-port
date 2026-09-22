@@ -11,7 +11,9 @@
  *
  * Inert in the N64 build (port/shim is not on its include path).
  */
-#if defined(__cplusplus)
+#if defined(__cplusplus) || defined(__vita__)
+/* Vita: pthread.h needs the real sched.h. rsp.c/rsp.h (the only callers that
+ * wanted the decomp one) now include it by explicit path instead. */
 #include "hostsched.h"
 #else
 #include_next <sched.h>

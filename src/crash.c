@@ -269,7 +269,10 @@ void *g_StackPtrs1[STACK_POINTER_COUNT] = {&sp_rmon, &sp_idle, &sp_shed, &sp_mai
 void *g_StackPtrs2[STACK_POINTER_COUNT] = {&sp_idle, &sp_shed, &sp_main, &sp_audi, &sp_debug};
 #else
 // no sp_debug
-void *g_StackPtrs2[STACK_POINTER_COUNT] = {&sp_idle, &sp_shed, &sp_main, &sp_audi, &cfb_16};
+// cfb_16 (not &cfb_16): same address either way for a real array, but
+// cfb_16 is a pointer variable on Vita (port/src/dram.c) where &cfb_16
+// would mean something else.
+void *g_StackPtrs2[STACK_POINTER_COUNT] = {&sp_idle, &sp_shed, &sp_main, &sp_audi, cfb_16};
 #endif
 
 void *g_StackPtrs3[STACK_POINTER_COUNT] = {&sp_rmon, &sp_idle, &sp_shed, &sp_main, &sp_audi};
