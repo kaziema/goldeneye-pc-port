@@ -89,6 +89,8 @@ static void portAtExit(void)
 {
     /* Clean-exit only (exit(0) from videoPumpEvents). Crash/fatal paths call
      * abort(), which does not run atexit handlers. */
+    extern void geEepromFlushIfDirty(void); /* port/src/libultra.c */
+    geEepromFlushIfDirty();
     videoSaveWindowState();
     configSave();
 }
@@ -97,6 +99,11 @@ static void portAtExit(void)
 /* Default newlib heap; unverified against real usage, matches the value
  * Ghostship/2ship2harkinian/papermario-pc-upload all use on the same stack. */
 int _newlib_heap_size_user = 256 * 1024 * 1024;
+
+/* papermario-pc-upload finding: if the code segment ends too close to a
+ * 64KB boundary, vita-elf-create fails with "segment 1 overlaps" (it needs
+ * ~4.4KB clear after it). Padding pushes the end well clear of that. */
+__attribute__((used)) const unsigned char port_text_segment_padding[24 * 1024] = { 0 };
 
 struct geVitaMainArgs { int argc; char **argv; };
 static int geMain(int argc, char **argv);
@@ -114,7 +121,7 @@ int main(int argc, char **argv)
     scePowerSetBusClockFrequency(222);
     scePowerSetGpuClockFrequency(222);
     scePowerSetGpuXbarClockFrequency(166);
-    sceIoMkdir("ux0:data/GEVT00001", 0777);
+    sceIoMkdir("ux0:data/GoldenEye007", 0777);
 
     static struct geVitaMainArgs args;
     args.argc = argc;
@@ -289,8 +296,10 @@ int main(int argc, char **argv)
 
     /* 5. Host thread: pump SDL events until the window is closed / ESC.
      *    videoPumpEvents() exits the process on quit. */
+    extern void geEepromFlushIfDirty(void); /* port/src/libultra.c */
     for (;;) {
         videoPumpEvents();
+        geEepromFlushIfDirty();
         sysSleep(8);
     }
 

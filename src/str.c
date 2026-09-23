@@ -121,6 +121,10 @@ int isspace(unsigned char c) {
 }
 
 #define	ULONG_MAX ((unsigned long)(~0L)) /* 0xFFFFFFFF */
+#if !defined(__vita__)
+/* newlib's own strtol (pulled in regardless, unlike glibc/MinGW) collides
+ * with this one as a duplicate strong symbol — same standard semantics,
+ * just use newlib's on Vita. str.h's declaration still covers callers. */
 long int strtol(const char *str, char **endptr, int base) {
     int neg;
     unsigned char *ptr;
@@ -200,3 +204,4 @@ long int strtol(const char *str, char **endptr, int base) {
     }
     return 0;
 }
+#endif

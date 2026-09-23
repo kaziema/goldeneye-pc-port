@@ -96,7 +96,7 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
      * before any SDL window/GL calls. Pool sizes and MSAA level match the
      * proven papermario-pc-upload/Ghostship/2ship2harkinian config; the
      * 960x544 here is the Vita's actual screen size, not a window size. */
-    sceIoMkdir("ux0:data/GEVT00001/shader_cache", 0777);
+    sceIoMkdir("ux0:data/GoldenEye007/shader_cache", 0777);
     vglSetParamBufferSize(6 * 1024 * 1024);
     vglInitWithCustomThreshold(0, 960, 544, 4 * 1024 * 1024, 0, 0, 0, SCE_GXM_MULTISAMPLE_4X);
     window_width = 960;

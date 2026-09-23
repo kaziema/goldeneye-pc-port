@@ -197,7 +197,11 @@
 // These are compile time extern constants (so not "really" const), but used the same
 // as the defines above, which is to index into ptr_animation_table.
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__vita__)
+/* Vita (32-bit ARM): g_pc_animdata_base ends up NULL anyway (romdata.c's
+ * 4GiB-align probe truncates to 0 on a 32-bit uintptr_t), so &ANIM_DATA_x
+ * is already exactly the offset with no truncation trick needed — the same
+ * macros work unchanged, just via a simpler route to the same NULL base. */
 /* D34 (docs/dev/findings.md): on N64 this segment links at VMA 0
  * (ge007.ld), so &ANIM_DATA_x is the record's offset within the
  * animation_data segment and game code re-bases it with

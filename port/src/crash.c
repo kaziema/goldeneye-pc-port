@@ -434,6 +434,16 @@ static void crashHandler(int sig, siginfo_t *siginfo, void *ctx)
 
     /* D254: terminate directly — sysFatalError() raises SIGABRT which used
      * to re-enter this handler and truncate the log we just wrote. */
+#if defined(PLATFORM_VITA)
+    /* papermario-pc-upload finding: plain abort()/_exit() on SIGABRT writes
+     * no .psp2dmp (it's not a hardware fault) — the log above is all you'd
+     * get. SIGSEGV/SIGBUS/SIGILL are real faults and already get a dump;
+     * only SIGABRT needs this. Fault on purpose so the OS captures one,
+     * with our own log already safely written first. */
+    if (sig == SIGABRT) {
+        *(volatile int *)0 = 0;
+    }
+#endif
     _exit(128 + sig);
 }
 
@@ -470,7 +480,27 @@ void crashDumpThreads(const unsigned long *tids, const char **names, int count)
     }
 }
 
-#endif /* PLATFORM_WINDOWS / PLATFORM_LINUX */
+#elif defined(PLATFORM_VITA)
+/* Thread roster only, no backtrace — no execinfo.h/backtrace() on newlib.
+ * A real ARM unwind here is unverified/unwritten; this at least confirms
+ * the watchdog fired and which threads were up when it did. */
+void crashDumpThreads(const unsigned long *tids, const char **names, int count)
+{
+    char msg[CRASH_MAX_MSG + 1] = { 0 };
+    unsigned msglen = 0;
+
+    CRASH_MSG("THREAD DUMP (%d live):\n", count);
+    for (int i = 0; i < count; ++i) {
+        CRASH_MSG("  tid=0x%lx  %s\n", tids ? tids[i] : 0UL,
+                  (names && names[i]) ? names[i] : "?");
+    }
+    sysLogPrintf(LOG_ERROR, "%s", msg);
+    {
+        FILE *f = fopen(CRASH_LOG_FNAME, "ab");
+        if (f) { fprintf(f, "%s", msg); fclose(f); }
+    }
+}
+#endif /* PLATFORM_WINDOWS / PLATFORM_LINUX / PLATFORM_VITA */
 
 int g_CrashEnabled = 0;
 

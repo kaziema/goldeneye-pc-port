@@ -136,7 +136,7 @@ REGION_DEFS := -DVERSION_US -DLANG_US -DREFRESH_NTSC \
 
 # Not carried over from the PC build's linker flags: -fno-pie /
 # -Wl,-Ttext-segment=0x20000000 / --disable-dynamicbase — no Vita equivalent yet.
-COMMON_FLAGS := -g -O2 -fno-strict-aliasing -funsigned-char -fwrapv \
+COMMON_FLAGS := -g -Wl,-q,--allow-multiple-definition -O2 -fno-strict-aliasing -funsigned-char -fwrapv \
 	-fno-stack-protector -fno-omit-frame-pointer \
 	-include versioninfo.h \
 	$(foreach dir,$(INCLUDES),-I$(dir)) \
@@ -162,13 +162,13 @@ ASFLAGS  := -g $(foreach dir,$(INCLUDES),-I$(dir))
 LIBS := -lstdc++ \
 	-Wl,--whole-archive -lpthread -Wl,--no-whole-archive \
 	-Wl,--start-group \
-	-lz -lmathneon -lvitaGL -lvitashark -lSceShaccCgExt \
+	-lz -lmathneon -lvitaGL -lvitashark -lSceShaccCgExt -ltaihen_stub \
 	-lSDL2main -lSDL2 \
 	-lSceCtrl_stub -lSceGxm_stub -lSceDisplay_stub \
 	-lSceAudio_stub -lSceAudioIn_stub -lSceSysmodule_stub \
 	-lSceAppMgr_stub -lSceAppUtil_stub -lScePower_stub \
 	-lSceCommonDialog_stub -lSceTouch_stub -lSceMotion_stub \
-	-lSceHid_stub -lSceKernelDmacMgr_stub -lSceShaccCg_stub \
+	-lSceHid_stub -lSceKernelDmacMgr_stub -lSceShaccCg_stub -lSceIme_stub \
 	-Wl,--end-group
 
 # -----------------------------------------------------------------------------

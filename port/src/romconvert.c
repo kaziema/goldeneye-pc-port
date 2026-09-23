@@ -35,6 +35,8 @@ extern int snprintf(char *str, size_t maxsize, const char *format, ...);
     #define WIN32_LEAN_AND_MEAN
   #endif
   #include <windows.h>
+#elif defined(__vita__)
+  /* no fork/exec headers needed — see rcRunConverter below */
 #else
   #include <unistd.h>
   #include <sys/wait.h>
@@ -106,6 +108,15 @@ static int rcRunConverter(const char *exePath, const char *rom, const char *out)
     }
     free(wcmd);
     return rc;
+}
+#elif defined(__vita__)
+/* No fork/exec on Vita, and no ARM build of the frozen converter anyway —
+ * sidecars have to be generated on a PC and copied over. This only runs at
+ * all if rcSidecarsPresent() already said they're missing. */
+static int rcRunConverter(const char *exePath, const char *rom, const char *out)
+{
+    (void)exePath; (void)rom; (void)out;
+    return -1;
 }
 #else
 static int rcRunConverter(const char *exePath, const char *rom, const char *out)

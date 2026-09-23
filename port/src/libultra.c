@@ -1163,14 +1163,16 @@ s32 osContReset(OSMesgQueue *mq, OSContStatus *status)
 /* EEPROM: file-backed 16Kbit save (Phase 4, BACKLOG B5). GE addresses the
  * device in 8-byte blocks (src/game/file2.c: checksum @block 0, five
  * save_data slots from block 4). Backed by $S/ge007.eep, loaded lazily on
- * first access and rewritten on every write. Pattern mirrors the PD port
- * (pd_port/port/src/libultra.c). */
+ * first access, flushed once per frame if dirty (not on every write — a
+ * papermario-pc-upload Vita finding: per-write flushes stalled on Vita
+ * storage). Pattern mirrors the PD port (pd_port/port/src/libultra.c). */
 #define GE_EEP_BLOCKS  EEP16K_MAXBLOCKS          /* 256 */
 #define GE_EEP_SIZE    (GE_EEP_BLOCKS * 8)       /* 2048 bytes */
 #define GE_EEP_PATH    "$S/ge007.eep"
 
 static u8   s_eeprom[GE_EEP_SIZE];
 static int  s_eepromLoaded = 0;
+static int  s_eepromDirty = 0;
 
 static void geEepromLoad(void)
 {
@@ -1197,6 +1199,17 @@ static void geEepromStore(void)
         fclose(fp);
     } else {
         sysLogPrintf(LOG_ERROR, "eeprom: cannot write %s", path);
+    }
+}
+
+/* Paper Mario's Vita port found rewriting on every single write call caused
+ * real stalls on Vita storage; it batches into one flush a frame instead.
+ * Same fix here: mark dirty, flush from the host loop (port/src/main.c). */
+void geEepromFlushIfDirty(void)
+{
+    if (s_eepromDirty) {
+        s_eepromDirty = 0;
+        geEepromStore();
     }
 }
 
@@ -1348,7 +1361,7 @@ static s32 geEepromRW(u8 block, u8 *buf, int nbytes, int write)
     geEepromLoad();
     if (write) {
         memcpy(s_eeprom + off, buf, nbytes);
-        geEepromStore();
+        s_eepromDirty = 1;
     } else {
         memcpy(buf, s_eeprom + off, nbytes);
         /* D297: one-time migration of pre-D284 slot CRCs (port/src/legacycrc.c).

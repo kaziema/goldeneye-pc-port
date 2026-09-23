@@ -112,7 +112,7 @@ void bullet_path_from_screen_center();
 void * calloc();
 void casingsInit();
 bool cheatIsActive();
-s32 check_cur_player_ammo_amount_in_inventory();
+s32 check_cur_player_ammo_amount_in_inventory(AMMOTYPE); /* GCC15/arm-vita-eabi: empty-paren conflicts with the real definition's enum param */
 bool check_if_imageID_is_light();
 u32 check_ramrom_flags();
 s32 chrGetNumFree();
@@ -222,7 +222,7 @@ u8 * getPlayerWeaponBufferForHand();
 PROP getPropForHeldItem();
 void getRoomPositionScaledByIndex();
 u32 getSizeBufferWeaponInHand();
-s32 get_ammo_type_for_weapon();
+s32 get_ammo_type_for_weapon(ITEM_IDS); /* same GCC15 conflict as above */
 u8 get_bondata_invincible_flag();
 s32 get_cur_playernum();
 s32 get_curplay_killcount();
@@ -477,5 +477,17 @@ Gfx * watchRenderControllerOpaque();
 u32 weaponLoadProjectileModels();
 void zbufSetBuffer();
 
+#elif defined(PORT) && defined(__vita__) && !defined(__cplusplus)
+/* Not the x86_64 pointer-truncation problem above (Vita is 32-bit) — a
+ * different GCC15/arm-vita-eabi issue: these two get called (in gunfire.c/
+ * propobj.c) before any prototype is visible, so the compiler synthesizes an
+ * implicit "unspecified args" declaration; when the real enum-typed
+ * definition/extern is reached later in the same TU, GCC now hard-errors
+ * instead of accepting it. Real prototypes here fix that. Only these two are
+ * declared — no reason to assume the other ~400 need the same treatment. */
+#include "bondtypes.h" /* ITEM_IDS */
+#include "bondconstants.h" /* AMMOTYPE */
+s32 check_cur_player_ammo_amount_in_inventory(AMMOTYPE);
+s32 get_ammo_type_for_weapon(ITEM_IDS);
 #endif /* PORT && __x86_64__ && !__cplusplus */
 #endif /* _PC_PROTOS_H_ */
