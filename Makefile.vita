@@ -4,14 +4,22 @@
 # Source lists mirror CMakeLists.txt; VPK/LiveArea packaging adapted from
 # papermario-pc-upload/Makefile.vita.
 #
-# STATUS: scaffold, does not link yet.
-#   - gfx_opengl.cpp/gfx_sdl2.cpp still target desktop GL/SDL2, need vitaGL
-#     forks (research doc §3 steps 3-4).
-#   - No Vita entry point yet (§3 step 5).
-#   - UNRESOLVED: dram_syms.s / romassets_u.s rely on fixed-address absolute
-#     symbols (0x10000000-0x80050000). The PC build forces a fixed load base
-#     to make that work; Vita's loader doesn't give us that lever the same
-#     way. Not fixed here — see port/src/dram.c mmap() usage.
+# STATUS: 242/244 objects compile clean (the other 2 are pre-existing,
+# unrelated decomp issues — gunfire.c/propobj.c). Link is untested: no
+# hardware/emulator here, and the stub-lib set in LIBS below is unverified
+# against a real link. Everything compiles, nothing has run.
+#   - DRAM (port/src/dram.c) and ROM/cart (port/src/romdata.c) addressing:
+#     no fixed-address mapping on Vita, so both now allocate normally and
+#     translate through a runtime base at the actual read/dereference
+#     chokepoints (fast3d's seg_addr(), osPiStartDma, OS_K0_TO_PHYSICAL).
+#   - gfx_opengl.cpp forked onto vitaGL directly (vita_gl_compat.h stands in
+#     for glad); gfx_sdl2.cpp calls vglInitWithCustomThreshold before SDL
+#     window/context creation, matching papermario-pc-upload's proven config.
+#     GLSL version choice (100) and profile treatment (ES-like) are the
+#     least-verified assumptions in the gfx fork — see gfx_opengl.cpp.
+#   - Vita entry point (port/src/main.c): heap bump, clock-speed max,
+#     small-stack-thread -> worker-thread handoff, matching Ghostship/
+#     2ship2harkinian/papermario-pc-upload's proven pattern.
 #
 # Usage: make -f Makefile.vita
 

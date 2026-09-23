@@ -1005,7 +1005,12 @@ static void piServiceDma(s32 direction, u32 srcPA, void *dstVA, u32 size)
             sysFatalError("D60: ROM-read target %p + 0x%X not host-mapped "
                           "(src=0x%08X)", dstVA, size, srcPA);
         }
+#if defined(__vita__)
+        extern uintptr_t g_vitaCartBase; // port/src/romdata.c — no fixed 0x10000000 mapping here
+        memcpy(dstVA, (const void *)(g_vitaCartBase + (srcPA - 0x10000000u)), size);
+#else
         memcpy(dstVA, (const void *)(uintptr_t)srcPA, size);
+#endif
     } else {
         /* OS_WRITE: the game never writes the cart (saves go to EEPROM via
          * osEeprom*, shimmed separately). Log and drop. */

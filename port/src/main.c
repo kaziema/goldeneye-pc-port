@@ -29,6 +29,9 @@
 #include "dram.h"
 #if defined(__vita__)
 #include "initanitable.h" /* src/game — on the include path (see Makefile.vita) */
+#include <psp2/power.h>
+#include <psp2/io/stat.h>
+#include <pthread.h>
 #endif
 #include "video.h"
 #include "audio.h"
@@ -90,8 +93,48 @@ static void portAtExit(void)
     configSave();
 }
 
+#if defined(__vita__)
+/* Default newlib heap; unverified against real usage, matches the value
+ * Ghostship/2ship2harkinian/papermario-pc-upload all use on the same stack. */
+int _newlib_heap_size_user = 256 * 1024 * 1024;
+
+struct geVitaMainArgs { int argc; char **argv; };
+static int geMain(int argc, char **argv);
+
+static void *geVitaWorker(void *arg)
+{
+    struct geVitaMainArgs *a = (struct geVitaMainArgs *)arg;
+    geMain(a->argc, a->argv);
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
+    scePowerSetArmClockFrequency(444);
+    scePowerSetBusClockFrequency(222);
+    scePowerSetGpuClockFrequency(222);
+    scePowerSetGpuXbarClockFrequency(166);
+    sceIoMkdir("ux0:data/GEVT00001", 0777);
+
+    static struct geVitaMainArgs args;
+    args.argc = argc;
+    args.argv = argv;
+
+    pthread_t t;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 1 * 1024 * 1024);
+    pthread_create(&t, &attr, geVitaWorker, &args);
+    pthread_join(t, NULL); /* geMain() does not return in practice */
+    return 0;
+}
+
+static int geMain(int argc, char **argv)
+{
+#else
+int main(int argc, char **argv)
+{
+#endif
     sysSetArgs(argc, argv);
 
     if (sysArgCheck("--version")) { portPrintVersion(); return 0; }

@@ -231,6 +231,13 @@ const char *sysResolvePath(const char *path)
     }
 #endif
 
+#if defined(__vita__)
+    /* No CWD/exe-dir concept on Vita; both go to the app's writable data dir. */
+    if (!strncmp(path, "$E/", 3) || !strncmp(path, "$S/", 3)) {
+        snprintf(out, sizeof(out), "ux0:data/GEVT00001/%s", path + 3);
+        return out;
+    }
+#endif
     if (!strncmp(path, "$E/", 3)) {
 #if defined(PLATFORM_WINDOWS)
         snprintf(out, sizeof(out), "%s\\%s", exedir, path + 3);

@@ -14,7 +14,11 @@
 #endif
 #include <PR/gbi.h>
 
+#if defined(__vita__)
+#include "vita_gl_compat.h"
+#else
 #include "glad/glad.h"
+#endif
 
 #include "gfx_cc.h"
 #include "gfx_rendering_api.h"
@@ -595,8 +599,10 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     glAttachShader(shader_program, fragment_shader);
     glLinkProgram(shader_program);
 
-    glDetachShader(shader_program, vertex_shader);
+#if !defined(__vita__)
+    glDetachShader(shader_program, vertex_shader); /* vitaGL has no glDetachShader; harmless to skip */
     glDetachShader(shader_program, fragment_shader);
+#endif
     glDeleteShader(vertex_shader);
     glDeleteShader(fragment_shader);
 
@@ -871,6 +877,7 @@ static void gfx_opengl_draw_triangles(float buf_vbo[], size_t buf_vbo_len, size_
     glDrawArrays(GL_TRIANGLES, 0, 3 * buf_vbo_num_tris);
 }
 
+#if !defined(__vita__)
 typedef void (APIENTRY *DEBUGPROC)(GLenum source,
     GLenum type,
     GLuint id,
@@ -900,6 +907,11 @@ static void gfx_opengl_enable_debug(void) {
         glDebugMessageCallback(gl_debug, NULL);
     }
 }
+#else
+static void gfx_opengl_enable_debug(void) {
+    /* vitaGL has no debug-output extension. */
+}
+#endif
 
 static bool gfx_opengl_supports_framebuffers(void) {
     if (GLVersion.major > 2) {
@@ -975,6 +987,12 @@ static void *gl_load_proc(const char *name) {
     return NULL;
 }
 
+#if defined(__vita__)
+/* Nothing to patch: vita_gl_compat.h's GLAD_GL_* values are fixed macros, and
+ * the EXT-pointer-copy block below assigns to what are now real vitaGL
+ * function names via macro substitution — would fail to compile as-is. */
+static void gfx_opengl_init_extensions(void) {}
+#else
 static void gfx_opengl_init_extensions(void) {
     // patch up some extension values and pointers
     if (!GLAD_GL_ARB_depth_clamp) {
@@ -1007,8 +1025,17 @@ static void gfx_opengl_init_extensions(void) {
         }
     }
 }
+#endif
 
 static void gfx_opengl_init(void) {
+#if defined(__vita__)
+    /* vitaGL links its functions directly — no loader, no real SDL GL
+     * context/profile to query. Treated as ES here (not core): its shader
+     * compiler wants precision qualifiers and #version 100, same family as
+     * the gl_es path below, just an older version number. */
+    gl_core_profile = false;
+    gl_es = true;
+#else
     if (!gladLoadGLLoader(gl_load_proc) || glGetString == NULL || glEnable == NULL) {
         sysFatalError("Could not load OpenGL.\nReported SDL error: %s", SDL_GetError());
     }
@@ -1018,6 +1045,7 @@ static void gfx_opengl_init(void) {
     SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &val);
     gl_core_profile = (val == SDL_GL_CONTEXT_PROFILE_CORE);
     gl_es = (val == SDL_GL_CONTEXT_PROFILE_ES);
+#endif
 
     gfx_opengl_init_extensions();
 
@@ -1051,6 +1079,14 @@ static void gfx_opengl_init(void) {
     }
 
     // determine GLSL version
+#if defined(__vita__)
+    /* SceShaccCg (vitaGL's shader compiler) is closest to GLSL ES 1.00 —
+     * matches the -DIMGUI_IMPL_OPENGL_ES2 convention other Vita ports on
+     * this same vitaGL use. Least-verified assumption in this whole file;
+     * if shaders fail to compile on hardware, start here. */
+    gl_glsl_version = 100;
+    snprintf(gl_glsl_version_str, sizeof(gl_glsl_version_str), "100");
+#else
     if (gl_es) {
         // ES has its own numbering scheme, but it should support 300 even on 3.1 and 3.2
         gl_glsl_version = 300;
@@ -1070,6 +1106,7 @@ static void gfx_opengl_init(void) {
         }
         snprintf(gl_glsl_version_str, sizeof(gl_glsl_version_str), "%d core", gl_glsl_version);
     }
+#endif
     sysLogPrintf(LOG_NOTE, "GL: using GLSL version %s", gl_glsl_version_str);
 
     glGenBuffers(1, &opengl_vbo);
@@ -1083,9 +1120,11 @@ static void gfx_opengl_init(void) {
         glBindVertexArray(opengl_vao);
     }
 
+#if !defined(__vita__)
     if (GLAD_GL_ARB_depth_clamp) {
         glEnable(GL_DEPTH_CLAMP);
     }
+#endif
     glDepthFunc(GL_LEQUAL);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 

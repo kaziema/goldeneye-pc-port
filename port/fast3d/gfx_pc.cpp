@@ -666,11 +666,13 @@ void gfx_texture_cache_delete_range(const uint8_t* start, const uint8_t* end) {
 // green/pink — the garbled Rareware-logo pixels.
 static bool gfx_tex_source_is_c_array(const uint8_t* addr) {
     const uintptr_t a = (uintptr_t)addr;
-    if (a >= 0x10000000u && a < 0x20000000u) return false; // cart map + sidecar
 #if defined(__vita__)
     extern uintptr_t g_vitaDramBase; // port/src/dram.c — one 8 MB region, no fixed base
+    extern uintptr_t g_vitaCartBase; // port/src/romdata.c — same, no fixed base
     if (a >= g_vitaDramBase && a < g_vitaDramBase + 0x00800000u) return false;
+    if (a >= g_vitaCartBase && a < g_vitaCartBase + 0x10000000u) return false;
 #else
+    if (a >= 0x10000000u && a < 0x20000000u) return false; // cart map + sidecar
     if (a >= 0x70000000u && a < 0x90000000u) return false; // V1 dram + KSEG0 mirror
 #endif
     return true; // exe image: C-compiled array
@@ -3332,6 +3334,14 @@ static inline void *seg_addr(uintptr_t w1) {
         return (void *)(w1 + 0x80000000);
 #endif
     }
+#if defined(__vita__)
+    // Cart-space addresses (romassets_*.s absolute symbols, 0x10xxxxxx) are
+    // live pointers on PC (ROM mapped at 0x10000000) but not on Vita.
+    if (w1 >= 0x10000000 && w1 < 0x20000000) {
+        extern uintptr_t g_vitaCartBase; // port/src/romdata.c
+        return (void *)(g_vitaCartBase + (w1 - 0x10000000));
+    }
+#endif
     // D131: a GBI DL built by game code can reference a COMPILED symbol via
     // osVirtualToPhysical() (a u32-returning shim), which truncates the
     // module's 0x1_00000000 high word. Seen in explosionRenderPropSmoke:

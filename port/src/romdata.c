@@ -32,6 +32,8 @@ extern int snprintf(char *str, size_t maxsize, const char *format, ...);
     #define WIN32_LEAN_AND_MEAN
   #endif
   #include <windows.h>
+#elif defined(__vita__)
+  #include <stdint.h>
 #else
   /* POSIX: mmap the ROM at the fixed cart address (mirrors the VirtualAlloc
    * path). <sys/mman.h> is a host header the decomp include path does not
@@ -51,13 +53,22 @@ extern int snprintf(char *str, size_t maxsize, const char *format, ...);
 #include <ultra64.h>
 #include "bondtypes.h"
 
-#define CART_BASE   0x10000000u
+#define CART_BASE   0x10000000u /* N64 cart-address anchor — stays this value everywhere used for offset math, even on Vita */
 
 static u8  *rom = NULL;        /* heap copy (fallback path) */
 static u32  romSize = 0;
 static int  mappedAtCartBase = 0;
 #if !defined(PLATFORM_WINDOWS)
 static unsigned long long mappedLen = 0;  /* munmap() needs the length */
+#endif
+
+#if defined(__vita__)
+/* No fixed-address mapping on Vita — real buffer lives here instead of at
+ * CART_BASE. CART_TO_HOST translates a cart-space address/offset to it. */
+uintptr_t g_vitaCartBase;
+#define CART_TO_HOST(addr) ((void *)(g_vitaCartBase + ((uintptr_t)(addr) - CART_BASE)))
+#else
+#define CART_TO_HOST(addr) ((void *)(uintptr_t)(addr))
 #endif
 
 /* D34 (docs/internals.md): PE image base, low 32 bits zero. On N64 the
@@ -231,22 +242,22 @@ static void romdataRaw16Walk(const u8 *ctl, u32 ctlSize, u8 *tbl, u32 tblSize,
 static int romdataFinishCartMap(const char *tok, u8 *img,
                                 u32 sideTotal, u32 cgTotal)
 {
-    memcpy((void *)(uintptr_t)CART_BASE, img, romSize);
+    memcpy(CART_TO_HOST(CART_BASE), img, romSize);
     free(img);
     mappedAtCartBase = 1;
     sysLogPrintf(LOG_INFO, "romdataInit: %s (%u bytes) mapped at 0x%08X "
                  "(cart base)%s%s", tok, romSize, CART_BASE,
                  sideTotal ? ", + model sidecars" : "",
                  cgTotal ? ", + bg/stan sidecars" : "");
-    pcmodelsLoadSidecars(CART_BASE, romSize);
-    pccgLoadSidecars(CART_BASE + romSize + pcmodelsTotalSize());
+    pcmodelsLoadSidecars((uintptr_t)CART_TO_HOST(CART_BASE), romSize);
+    pccgLoadSidecars((uintptr_t)CART_TO_HOST(CART_BASE + romSize + pcmodelsTotalSize()));
 
     /* D55: the RLE folder-menu background at `unknown2` has a big-endian w/h
      * header that rle_expand_8bit() reads little-endian; match the N64 .data
      * copy by swapping it in place (no-op if it already reads as LE). */
     {
         extern void *unknown2; /* absolute cart address */
-        u32 *hdr = (u32 *)&unknown2;
+        u32 *hdr = (u32 *)CART_TO_HOST(&unknown2);
         if ((u16)*hdr > 512 || (u16)(*hdr >> 16) > 512)
             *hdr = romdataBswap32(*hdr);
     }
@@ -264,17 +275,17 @@ static int romdataFinishCartMap(const char *tok, u8 *img,
         /* Each tbl segment runs to the end of the ROM; bound the swap range
          * by that (the real segment is smaller, but base/len are validated
          * against this anyway). */
-        romdataRaw16Walk((const u8 *)&_sfxctlSegmentRomStart,
+        romdataRaw16Walk((const u8 *)CART_TO_HOST(&_sfxctlSegmentRomStart),
                          (u32)&_sfxtblSegmentRomStart -
                              (u32)&_sfxctlSegmentRomStart,
-                         (u8 *)&_sfxtblSegmentRomStart,
+                         (u8 *)CART_TO_HOST(&_sfxtblSegmentRomStart),
                          CART_BASE + romSize -
                              (u32)&_sfxtblSegmentRomStart,
                          done, &ndone);
-        romdataRaw16Walk((const u8 *)&_instrumentsctlSegmentRomStart,
+        romdataRaw16Walk((const u8 *)CART_TO_HOST(&_instrumentsctlSegmentRomStart),
                          (u32)&_instrumentstblSegmentRomStart -
                              (u32)&_instrumentsctlSegmentRomStart,
-                         (u8 *)&_instrumentstblSegmentRomStart,
+                         (u8 *)CART_TO_HOST(&_instrumentstblSegmentRomStart),
                          CART_BASE + romSize -
                              (u32)&_instrumentstblSegmentRomStart,
                          done, &ndone);
@@ -364,7 +375,17 @@ int romdataInit(void)
          * romdataGetRom()/the PI shims, will read wrong memory). */
         {
             u32 maplen = romSize + sideTotal + cgTotal;
-#if defined(PLATFORM_WINDOWS)
+#if defined(__vita__)
+            /* No fixed-address mapping on Vita — a normal allocation plus the
+             * CART_TO_HOST translation (see above) stands in for it. */
+            void *at = malloc(maplen);
+            if (at) {
+                g_vitaCartBase = (uintptr_t)at;
+                mappedLen = maplen;
+                return romdataFinishCartMap(tok, img, sideTotal, cgTotal);
+            }
+            sysLogPrintf(LOG_WARNING, "romdataInit: malloc(0x%X) failed", maplen);
+#elif defined(PLATFORM_WINDOWS)
             void *at = VirtualAlloc((LPVOID)CART_BASE, maplen,
                                     MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             if (at == (void *)(uintptr_t)CART_BASE)
@@ -409,7 +430,11 @@ int romdataInit(void)
 void romdataDestroy(void)
 {
     if (mappedAtCartBase) {
-#if defined(PLATFORM_WINDOWS)
+#if defined(__vita__)
+        free((void *)g_vitaCartBase);
+        g_vitaCartBase = 0;
+        mappedLen = 0;
+#elif defined(PLATFORM_WINDOWS)
         VirtualFree((LPVOID)CART_BASE, 0, MEM_RELEASE);
 #else
         munmap((void *)(uintptr_t)CART_BASE, (size_t)mappedLen);
@@ -425,7 +450,7 @@ void romdataDestroy(void)
 const u8 *romdataGetRom(void)
 {
     if (mappedAtCartBase)
-        return (const u8 *)(uintptr_t)CART_BASE;
+        return (const u8 *)CART_TO_HOST(CART_BASE);
     return rom;
 }
 u32       romdataGetRomSize(void) { return romSize; }

@@ -82,9 +82,26 @@ static void gfx_sdl_get_active_window_refresh_rate(uint32_t* refresh_rate) {
     *refresh_rate = mode.refresh_rate;
 }
 
+#if defined(__vita__)
+#include <psp2/io/stat.h>
+#include <vitaGL.h>
+#endif
+
 static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
     window_width = set->width;
     window_height = set->height;
+
+#if defined(__vita__)
+    /* vitaGL owns GL init on this platform — bring up its GXM context
+     * before any SDL window/GL calls. Pool sizes and MSAA level match the
+     * proven papermario-pc-upload/Ghostship/2ship2harkinian config; the
+     * 960x544 here is the Vita's actual screen size, not a window size. */
+    sceIoMkdir("ux0:data/GEVT00001/shader_cache", 0777);
+    vglSetParamBufferSize(6 * 1024 * 1024);
+    vglInitWithCustomThreshold(0, 960, 544, 4 * 1024 * 1024, 0, 0, 0, SCE_GXM_MULTISAMPLE_4X);
+    window_width = 960;
+    window_height = 544;
+#endif
 
 #ifdef SDL_HINT_VIDEO_HIGHDPI_DISABLED
     if (!set->allow_hidpi) {
