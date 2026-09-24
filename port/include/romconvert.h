@@ -12,10 +12,11 @@ extern "C" {
 #endif
 
 /* romImg: mapped/read ROM image (country byte at 0x3E selects the region);
- * romRelPath: the "$S/..." / "$E/..." / "./..." path the ROM was opened from.
+ * romSize: its length in bytes; romRelPath: the "$S/..." / "$E/..." / "./..." path the ROM was opened from.
  * Returns 1 when both sidecars are present, -1 when they could not be
  * produced (caller should abort boot). */
-int romConvertEnsureSidecars(const unsigned char *romImg, const char *romRelPath);
+int romConvertEnsureSidecars(const unsigned char *romImg, unsigned int romSize,
+                             const char *romRelPath);
 
 #ifdef __cplusplus
 }

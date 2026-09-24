@@ -15,6 +15,9 @@
  * re-checks. The conversion is deterministic and takes a few seconds; after
  * the first run the sidecars exist and this path is a no-op (two fsExists).
  *
+ * Vita: no external binary; the in-process converter (pcconv*.c) builds the
+ * 32-bit-layout sidecars from the ROM on first launch.
+ *
  * Returns 1 when both sidecars are present (already or after converting),
  * -1 when they could not be produced (caller should abort boot with a
  * message rather than crash later in modelPromoteNodeOffsetsToPointers, D179).
@@ -36,7 +39,9 @@ extern int snprintf(char *str, size_t maxsize, const char *format, ...);
   #endif
   #include <windows.h>
 #elif defined(__vita__)
-  /* no fork/exec headers needed — see rcRunConverter below */
+  #include <psp2/io/stat.h>
+  #include <psp2/io/fcntl.h>
+  #include "pcconv.h"
 #else
   #include <unistd.h>
   #include <sys/wait.h>
@@ -63,6 +68,10 @@ static int rcExistsResolved(const char *rel)
     return fsExists(p);
 }
 
+#if defined(__vita__)
+static int rcVitaStampOk(void);
+#endif
+
 static int rcSidecarsPresent(const char *region)
 {
     char rel[256];
@@ -70,7 +79,13 @@ static int rcSidecarsPresent(const char *region)
     if (!rcExistsResolved(rel))
         return 0;
     snprintf(rel, sizeof(rel), "$S/pccg-%s/pccg.bin", region);
-    return rcExistsResolved(rel);
+    if (!rcExistsResolved(rel))
+        return 0;
+#if defined(__vita__)
+    return rcVitaStampOk();
+#else
+    return 1;
+#endif
 }
 
 #if defined(PLATFORM_WINDOWS)
@@ -110,13 +125,70 @@ static int rcRunConverter(const char *exePath, const char *rom, const char *out)
     return rc;
 }
 #elif defined(__vita__)
-/* No fork/exec on Vita, and no ARM build of the frozen converter anyway —
- * sidecars have to be generated on a PC and copied over. This only runs at
- * all if rcSidecarsPresent() already said they're missing. */
-static int rcRunConverter(const char *exePath, const char *rom, const char *out)
+/* Bump when the converter output format changes; stale sidecars are rebuilt. */
+#define RC_VITA_STAMP "1\n"
+
+static int rcVitaStampOk(void)
 {
-    (void)exePath; (void)rom; (void)out;
-    return -1;
+    char buf[8] = "";
+    FSFile *f = fsOpen(sysResolvePath("$S/pcconv.ver"), "rb");
+    if (!f)
+        return 0;
+    int n = fsRead(f, buf, sizeof(buf) - 1);
+    fsClose(f);
+    return n > 0 && !strncmp(buf, RC_VITA_STAMP, sizeof(RC_VITA_STAMP) - 1);
+}
+
+/* Write via a temp name so an interrupted run never leaves a partial file. */
+static int rcVitaWrite(const char *relDir, const char *name, const void *data, size_t size)
+{
+    char dir[256], fin[300], tmp[300];
+    snprintf(dir, sizeof(dir), "%s", sysResolvePath(relDir));
+    sceIoMkdir(dir, 0777);
+    snprintf(fin, sizeof(fin), "%s/%s", dir, name);
+    snprintf(tmp, sizeof(tmp), "%s/%s.tmp", dir, name);
+
+    FSFile *f = fsOpen(tmp, "wb");
+    if (!f)
+        return -1;
+    const unsigned char *p = (const unsigned char *)data;
+    size_t left = size;
+    while (left) {
+        int chunk = left > (1u << 20) ? (1 << 20) : (int)left;
+        if (fsWrite(f, p, chunk) != chunk) {
+            fsClose(f);
+            return -1;
+        }
+        p += chunk;
+        left -= (size_t)chunk;
+    }
+    fsClose(f);
+    sceIoRemove(fin);
+    return sceIoRename(tmp, fin) < 0 ? -1 : 0;
+}
+
+static int rcVitaConvert(const unsigned char *rom, unsigned int romSize, const char *region)
+{
+    PcConvResult r;
+    char err[1024], dm[64], dc[64];
+
+    sysLogPrintf(LOG_INFO, "romconvert: first launch, converting ROM data (this can take a minute)");
+    if (pcconvRun(rom, romSize, &kPcConvTables, &kPcConvLayout32, &r, err, sizeof(err))) {
+        sysLogPrintf(LOG_ERROR, "romconvert: conversion failed:\n%s", err);
+        return -1;
+    }
+    snprintf(dm, sizeof(dm), "$S/pcmodels-%s", region);
+    snprintf(dc, sizeof(dc), "$S/pccg-%s", region);
+    /* .bin last in each dir: rcSidecarsPresent() keys off it. */
+    int bad = rcVitaWrite(dm, "manifest.csv", r.modelsCsv.data, r.modelsCsv.size) ||
+              rcVitaWrite(dm, "pcmodels.bin", r.modelsBin.data, r.modelsBin.size) ||
+              rcVitaWrite(dc, "manifest.csv", r.cgCsv.data, r.cgCsv.size) ||
+              rcVitaWrite(dc, "pccg.bin", r.cgBin.data, r.cgBin.size) ||
+              rcVitaWrite("$S", "pcconv.ver", RC_VITA_STAMP, sizeof(RC_VITA_STAMP) - 1);
+    pcconvFree(&r);
+    if (bad)
+        sysLogPrintf(LOG_ERROR, "romconvert: could not write converted data (memory card full?)");
+    return bad ? -1 : 0;
 }
 #else
 static int rcRunConverter(const char *exePath, const char *rom, const char *out)
@@ -140,8 +212,30 @@ static int rcRunConverter(const char *exePath, const char *rom, const char *out)
 }
 #endif
 
-int romConvertEnsureSidecars(const unsigned char *romImg, const char *romRelPath)
+#if defined(__vita__)
+int romConvertEnsureSidecars(const unsigned char *romImg, unsigned int romSize,
+                             const char *romRelPath)
 {
+    (void)romRelPath;
+    const char *region = rcRegionForCountry(romImg[0x3E]);
+    if (!region)
+        return 1;
+    if (rcSidecarsPresent(region))
+        return 1;
+    /* The converter tables are built from the US ROM's file list. */
+    if (strcmp(region, "ntsc-final")) {
+        sysLogPrintf(LOG_ERROR, "romconvert: only the US ROM is supported on Vita");
+        return -1;
+    }
+    if (rcVitaConvert(romImg, romSize, region))
+        return -1;
+    return rcSidecarsPresent(region) ? 1 : -1;
+}
+#else
+int romConvertEnsureSidecars(const unsigned char *romImg, unsigned int romSize,
+                             const char *romRelPath)
+{
+    (void)romSize;
     const char *region = rcRegionForCountry(romImg[0x3E]);
     if (!region)
         return 1;   /* unknown country — romHeaderValid() rejects it anyway */
@@ -212,3 +306,4 @@ int romConvertEnsureSidecars(const unsigned char *romImg, const char *romRelPath
     sysLogPrintf(LOG_INFO, "romconvert: sidecars generated — continuing boot");
     return 1;
 }
+#endif /* __vita__ */

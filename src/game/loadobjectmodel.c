@@ -46,7 +46,15 @@ s32 getposstan(struct coord3d *pos, StandTile *stan, f32 radius, struct coord3d 
 */
 s32 sizepropdef(PropDefHeaderRecord *pdef)
 {
-#ifdef PORT
+#if defined(__vita__)
+    /* 32-bit layout: stride = file record size, shared with the converter. */
+    {
+        extern u32 pcconvPropdefWords(u32 type);
+        u32 words = pcconvPropdefWords(pdef->type);
+        return words ? (s32)words : 1;
+    }
+#endif
+#if defined(PORT) && !defined(__vita__)
     /* D88.4: the offline Usetup*Z converter (tools_pc/d88_propdefs.py) rewrites
      * every propDef record from its packed N64 image to its native PC struct
      * layout -- pointer members widen 4->8B, so records that contain pointers
