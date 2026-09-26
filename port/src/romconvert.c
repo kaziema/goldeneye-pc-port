@@ -144,18 +144,24 @@ static int rcVitaWrite(const char *relDir, const char *name, const void *data, s
 {
     char dir[256], fin[300], tmp[300];
     snprintf(dir, sizeof(dir), "%s", sysResolvePath(relDir));
+    size_t dl = strlen(dir);
+    if (dl && dir[dl - 1] == '/')
+        dir[dl - 1] = 0;
     sceIoMkdir(dir, 0777);
     snprintf(fin, sizeof(fin), "%s/%s", dir, name);
     snprintf(tmp, sizeof(tmp), "%s/%s.tmp", dir, name);
 
     FSFile *f = fsOpen(tmp, "wb");
-    if (!f)
+    if (!f) {
+        sysLogPrintf(LOG_ERROR, "romconvert: cannot create %s", tmp);
         return -1;
+    }
     const unsigned char *p = (const unsigned char *)data;
     size_t left = size;
     while (left) {
         int chunk = left > (1u << 20) ? (1 << 20) : (int)left;
         if (fsWrite(f, p, chunk) != chunk) {
+            sysLogPrintf(LOG_ERROR, "romconvert: write failed for %s", tmp);
             fsClose(f);
             return -1;
         }
@@ -164,7 +170,11 @@ static int rcVitaWrite(const char *relDir, const char *name, const void *data, s
     }
     fsClose(f);
     sceIoRemove(fin);
-    return sceIoRename(tmp, fin) < 0 ? -1 : 0;
+    if (sceIoRename(tmp, fin) < 0) {
+        sysLogPrintf(LOG_ERROR, "romconvert: cannot rename to %s", fin);
+        return -1;
+    }
+    return 0;
 }
 
 static int rcVitaConvert(const unsigned char *rom, unsigned int romSize, const char *region)
@@ -184,7 +194,7 @@ static int rcVitaConvert(const unsigned char *rom, unsigned int romSize, const c
               rcVitaWrite(dm, "pcmodels.bin", r.modelsBin.data, r.modelsBin.size) ||
               rcVitaWrite(dc, "manifest.csv", r.cgCsv.data, r.cgCsv.size) ||
               rcVitaWrite(dc, "pccg.bin", r.cgBin.data, r.cgBin.size) ||
-              rcVitaWrite("$S", "pcconv.ver", RC_VITA_STAMP, sizeof(RC_VITA_STAMP) - 1);
+              rcVitaWrite("$S/", "pcconv.ver", RC_VITA_STAMP, sizeof(RC_VITA_STAMP) - 1);
     pcconvFree(&r);
     if (bad)
         sysLogPrintf(LOG_ERROR, "romconvert: could not write converted data (memory card full?)");

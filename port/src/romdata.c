@@ -754,8 +754,12 @@ void romdataFixupFont(u8 *blob, u32 n64Size)
         /* D51: on PC pixeldata is a u64 at d+24 (fontchar needs 8-align,
          * sizeof=32) — the N64 u32-at-d+20 layout does not hold. Write the
          * offset into the pointer and zero-extend it. */
-        *(u32 *)(d + 24) = o;
-        *(u32 *)(d + 28) = 0;
+        {
+            u32 po = ROMDATA_OFFSEXP(struct fontchar, pixeldata); /* 24 on x86-64, 20 on Vita */
+            *(u32 *)(d + po) = o;
+            if (sizeof(void *) == 8)
+                *(u32 *)(d + po + 4) = 0;
+        }
     }
 }
 
@@ -1272,4 +1276,161 @@ void romdataFixupAudioBank(u8 *blob, u32 srcSize, u32 allocSize)
                      "romdataFixupAudioBank: %d out-of-range sub-struct(s)",
                      c.errors);
     }
+}
+
+/* 32-bit hosts: N64 layout already matches, so only swap BE -> LE in place.
+ * Offsets are read before their slot is swapped; visited[] stops double swaps. */
+struct abCtx {
+    u8  *b;
+    u32  size;
+    u8  *visited;
+    int  errors;
+};
+
+static u32 abRd32(struct abCtx *c, u32 o)
+{
+    return ((u32)c->b[o] << 24) | ((u32)c->b[o + 1] << 16) |
+           ((u32)c->b[o + 2] << 8) | (u32)c->b[o + 3];
+}
+static u16 abRd16(struct abCtx *c, u32 o) { return (u16)((c->b[o] << 8) | c->b[o + 1]); }
+static void abSw32(struct abCtx *c, u32 o)
+{
+    u8 t = c->b[o]; c->b[o] = c->b[o + 3]; c->b[o + 3] = t;
+    t = c->b[o + 1]; c->b[o + 1] = c->b[o + 2]; c->b[o + 2] = t;
+}
+static void abSw16(struct abCtx *c, u32 o) { u8 t = c->b[o]; c->b[o] = c->b[o + 1]; c->b[o + 1] = t; }
+
+/* 0: first visit and size fits, 1: already done or invalid. */
+static int abEnter(struct abCtx *c, u32 o, u32 need)
+{
+    if (o == 0 || o >= c->size || c->visited[o])
+        return 1;
+    if (o + need > c->size) {
+        c->errors++;
+        return 1;
+    }
+    c->visited[o] = 1;
+    return 0;
+}
+
+static void abBook(struct abCtx *c, u32 o)
+{
+    if (abEnter(c, o, 8))
+        return;
+    s32 order = (s32)abRd32(c, o), npred = (s32)abRd32(c, o + 4);
+    abSw32(c, o);
+    abSw32(c, o + 4);
+    if (order <= 0 || npred <= 0) { c->errors++; return; }
+    u32 n = (u32)order * (u32)npred * 8u;
+    if (o + 8 + 2 * n > c->size) { c->errors++; return; }
+    for (u32 i = 0; i < n; i++)
+        abSw16(c, o + 8 + 2 * i);
+}
+
+static void abLoop(struct abCtx *c, u32 o, int adpcm)
+{
+    if (abEnter(c, o, adpcm ? 44 : 12))
+        return;
+    for (u32 i = 0; i < 3; i++)
+        abSw32(c, o + 4 * i);
+    if (adpcm)
+        for (u32 i = 0; i < 16; i++)
+            abSw16(c, o + 12 + 2 * i);
+}
+
+static void abWaveTable(struct abCtx *c, u32 o)
+{
+    if (abEnter(c, o, 20))
+        return;
+    u8 type = c->b[o + 8];
+    u32 loop = abRd32(c, o + 12);
+    abSw32(c, o);
+    abSw32(c, o + 4);
+    abSw32(c, o + 12);
+    if (type == 0) {
+        u32 book = abRd32(c, o + 16);
+        abSw32(c, o + 16);
+        abLoop(c, loop, 1);
+        abBook(c, book);
+    } else if (type == 1) {
+        abLoop(c, loop, 0);
+    } else {
+        c->errors++;
+    }
+}
+
+static void abSound(struct abCtx *c, u32 o)
+{
+    if (abEnter(c, o, 15))
+        return;
+    u32 env = abRd32(c, o), wt = abRd32(c, o + 8);
+    abSw32(c, o);
+    abSw32(c, o + 4);   /* keymap: all u8 */
+    abSw32(c, o + 8);
+    if (!abEnter(c, env, 14))
+        for (u32 i = 0; i < 3; i++)
+            abSw32(c, env + 4 * i);
+    abWaveTable(c, wt);
+}
+
+static void abInst(struct abCtx *c, u32 o)
+{
+    if (abEnter(c, o, 16))
+        return;
+    u16 count = abRd16(c, o + 14);
+    abSw16(c, o + 12);
+    abSw16(c, o + 14);
+    if (o + 16 + 4u * count > c->size) { c->errors++; return; }
+    for (u32 i = 0; i < count; i++) {
+        u32 s = abRd32(c, o + 16 + 4 * i);
+        abSw32(c, o + 16 + 4 * i);
+        abSound(c, s);
+    }
+}
+
+static void abBank(struct abCtx *c, u32 o)
+{
+    if (abEnter(c, o, 12))
+        return;
+    u16 count = abRd16(c, o);
+    u32 perc = abRd32(c, o + 8);
+    abSw16(c, o);
+    abSw32(c, o + 4);
+    abSw32(c, o + 8);
+    abInst(c, perc);
+    if (o + 12 + 4u * count > c->size) { c->errors++; return; }
+    for (u32 i = 0; i < count; i++) {
+        u32 inst = abRd32(c, o + 12 + 4 * i);
+        abSw32(c, o + 12 + 4 * i);
+        abInst(c, inst);
+    }
+}
+
+void romdataSwapAudioBank32(u8 *blob, u32 size)
+{
+    struct abCtx c = { blob, size, NULL, 0 };
+    if (!blob || size < 4)
+        return;
+    c.visited = (u8 *)malloc(size);
+    if (!c.visited) {
+        sysLogPrintf(LOG_ERROR, "romdataSwapAudioBank32: OOM");
+        return;
+    }
+    memset(c.visited, 0, size);
+
+    u16 banks = abRd16(&c, 2);
+    abSw16(&c, 0);
+    abSw16(&c, 2);
+    if (4 + 4u * banks > size) {
+        c.errors++;
+        banks = (u16)((size - 4) / 4);
+    }
+    for (u32 i = 0; i < banks; i++) {
+        u32 b = abRd32(&c, 4 + 4 * i);
+        abSw32(&c, 4 + 4 * i);
+        abBank(&c, b);
+    }
+    free(c.visited);
+    if (c.errors)
+        sysLogPrintf(LOG_ERROR, "romdataSwapAudioBank32: %d bad sub-struct(s)", c.errors);
 }

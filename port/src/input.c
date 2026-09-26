@@ -1167,6 +1167,27 @@ unsigned inputComputePad(int idx, signed char *stick_x, signed char *stick_y)
             button |= GE_CONT_G;
         if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > trigPt)
             button |= GE_CONT_R;
+#if defined(__vita__)
+        /* No analog triggers on Vita: R fires, L aims, Triangle/Square cycle weapons. */
+        if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER))
+            button |= GE_CONT_G;
+        if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER))
+            button |= GE_CONT_R;
+        if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_A))
+            button |= GE_CONT_A;
+        if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_B))
+            button |= GE_CONT_B;
+        {
+            int triNow = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_Y);
+            int sqNow  = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_X);
+            int *prev = &padShoulderPrev[idx];
+            if (!padMenuMode) {
+                if (triNow && !(*prev & 1)) button |= GE_CONT_A;            /* next weapon */
+                if (sqNow && !(*prev & 2))  button |= GE_CONT_A | GE_CONT_G; /* prev weapon */
+            }
+            *prev = (triNow ? 1 : 0) | (sqNow ? 2 : 0);
+        }
+#else
 
         /* Modern dual-stick layout (Xbox re-release style; the Steam Deck
          * target). A/X = action/use/reload (the game's context-sensitive A
@@ -1193,6 +1214,7 @@ unsigned inputComputePad(int idx, signed char *stick_x, signed char *stick_y)
             }
             *prev = (rbNow ? 1 : 0) | (lbNow ? 2 : 0);
         }
+#endif
         if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_START))
             button |= GE_CONT_START;
         if (SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_UP))

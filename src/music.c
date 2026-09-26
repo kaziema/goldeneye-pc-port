@@ -699,6 +699,9 @@ void musicSeqPlayerInit(void)
 #else
         sfxBank = alHeapAlloc(&g_musicHeap, 1, size);
         romCopy(sfxBank, &_sfxctlSegmentRomStart, size);
+#if defined(__vita__)
+        romdataSwapAudioBank32((u8 *)sfxBank, size);
+#endif
 #endif
         alBnkfNew(sfxBank, (u8 *)&_sfxtblSegmentRomStart);
         g_musicSfxBufferPtr = sfxBank->bankArray[0];
@@ -720,6 +723,9 @@ void musicSeqPlayerInit(void)
 #else
         instrumentBank = alHeapAlloc(&g_musicHeap, 1, size);
         romCopy(instrumentBank, &_instrumentsctlSegmentRomStart, size);
+#if defined(__vita__)
+        romdataSwapAudioBank32((u8 *)instrumentBank, size);
+#endif
 #endif
         alBnkfNew(instrumentBank, (u8 *)&_instrumentstblSegmentRomStart);
         g_musicInstrumentBufferPtr = instrumentBank->bankArray[0];

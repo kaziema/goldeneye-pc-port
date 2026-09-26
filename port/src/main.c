@@ -122,6 +122,9 @@ int main(int argc, char **argv)
     scePowerSetGpuClockFrequency(222);
     scePowerSetGpuXbarClockFrequency(166);
     sceIoMkdir("ux0:data/GoldenEye007", 0777);
+    /* stderr is discarded on Vita; log to a file instead. */
+    if (freopen("ux0:data/GoldenEye007/log.txt", "w", stderr))
+        setvbuf(stderr, NULL, _IONBF, 0);
 
     static struct geVitaMainArgs args;
     args.argc = argc;
@@ -154,6 +157,12 @@ int main(int argc, char **argv)
                 "(%s, %s %s) -- %s",
                 GE007_ROMID, GE007_VERSION_HASH, GE007_VERSION_CODENAME,
                 GE007_ORIGIN_URL);
+#if defined(__vita__)
+    {
+        extern const char g_buildStamp[]; /* build-vita/build_stamp.c */
+        sysLogPrintf(LOG_INFO, "build %s", g_buildStamp);
+    }
+#endif
 
     /* Crash handler first, so any failure below is debuggable. */
     crashInit();

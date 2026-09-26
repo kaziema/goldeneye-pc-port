@@ -21,7 +21,11 @@
 #include "platform.h"
 #include "crash.h"
 
+#if defined(__vita__)
+#define CRASH_LOG_FNAME "ux0:data/GoldenEye007/ge007.crash.log"
+#else
 #define CRASH_LOG_FNAME "ge007.crash.log"
+#endif
 #define CRASH_MAX_MSG 8192
 #define CRASH_MAX_SYM 256
 #define CRASH_MAX_FRAMES 32

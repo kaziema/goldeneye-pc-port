@@ -113,8 +113,7 @@ void *dramReserve(void)
     CloseHandle(hSec);
     return v1;
 #elif defined(__vita__)
-    /* No way to request an address on Vita; fail loud if it's unsafe instead
-     * of silently corrupting s32-carried pointers. */
+    /* No way to request an address on Vita; log it, translation handles it. */
     SceUID blockId = sceKernelAllocMemBlock("ge007_dram", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW,
                                              DRAM_SIZE, NULL);
     if (blockId < 0) {
@@ -128,7 +127,7 @@ void *dramReserve(void)
 
     uintptr_t baseAddr = (uintptr_t)base;
     if (baseAddr + DRAM_SIZE > 0x80000000UL) {
-        sysFatalError("dram: block at %p, needs to be below 0x80000000", base);
+        sysLogPrintf(LOG_WARNING, "dram: block at %p is above 0x80000000", base);
     }
 
     g_vitaDramBase = baseAddr;

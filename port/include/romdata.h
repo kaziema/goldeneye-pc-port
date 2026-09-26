@@ -129,6 +129,9 @@ void romdataFixupFont(u8 *blob, u32 n64Size);
 u32  romdataAudioBankPcSize(const u8 *src, u32 srcSize);
 void romdataFixupAudioBank(u8 *blob, u32 srcSize, u32 allocSize);
 
+/* 32-bit hosts (Vita): byte-swap a ROM-layout bank in place, N64 layout kept. */
+void romdataSwapAudioBank32(u8 *blob, u32 size);
+
 /*
  * Map an N64 virtual address (0xA0000000 RDRAM space) to the corresponding
  * pointer in the loaded image. Used to resolve asset/segment references.

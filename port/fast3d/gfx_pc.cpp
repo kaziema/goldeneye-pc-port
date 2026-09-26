@@ -3341,6 +3341,11 @@ static inline void *seg_addr(uintptr_t w1) {
         extern uintptr_t g_vitaCartBase; // port/src/romdata.c
         return (void *)(g_vitaCartBase + (w1 - 0x10000000));
     }
+    // KSEG0 form (offset | 0x80000000, e.g. title.c gun barrel): no mirror on Vita.
+    if (w1 >= 0x80000000 && w1 < 0x80800000) {
+        extern uintptr_t g_vitaDramBase;
+        return (void *)(g_vitaDramBase + (w1 - 0x80000000));
+    }
 #endif
     // D131: a GBI DL built by game code can reference a COMPILED symbol via
     // osVirtualToPhysical() (a u32-returning shim), which truncates the

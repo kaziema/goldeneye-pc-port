@@ -21,4 +21,6 @@ _Static_assert(sizeof(MonitorObjRecord) == 256, "MonitorObjRecord");
 _Static_assert(sizeof(MultiMonitorObjRecord) == 596, "MultiMonitorObjRecord");
 _Static_assert(sizeof(VehichleRecord) == 176, "VehichleRecord");
 _Static_assert(sizeof(TankRecord) == 224, "TankRecord");
+_Static_assert(sizeof(Gfx) == 16, "Gfx slot");
+_Static_assert(__builtin_offsetof(Gfx, dma.addr) == __builtin_offsetof(Gfx, words.w1), "Gfx dma.addr");
 #endif

@@ -1056,7 +1056,7 @@ ALSoundState *sndPlaySfx(struct ALBankAlt_s *soundBank, s16 soundIndex, ALSoundS
     {
         ALKeyMap *keyMap;
 
-#ifndef PORT
+#if !defined(PORT) || defined(__vita__) /* Vita keeps the N64 bank layout */
         sound = (soundBank->instArray[0]->soundArray[soundIndex]);
 #else
         /* D206 (ABI/layout, not game logic): on N64 `ALInstrumentAlt_s`

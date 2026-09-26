@@ -62,12 +62,21 @@
  *   bits 64-127 = addr
  * So the LE-correct layout is:
  */
+#if UINTPTR_MAX == 0xFFFFFFFFu
+/* 32-bit LE (Vita): w1 sits at +4, right after w0. */
+typedef struct {
+    intptr_t  par : 24;
+    intptr_t  cmd : 8;
+    uintptr_t addr;
+} Gdma_le;
+#else
 typedef struct {
     intptr_t  par : 24;   /* bits 0-23   = len (from packing) */
     intptr_t  cmd : 8;    /* bits 24-31  = cmd (from packing) */
     intptr_t  len : 32;   /* bits 32-63  = 0 (unused)         */
     uintptr_t addr;       /* bits 64-127 = addr (from packing)*/
 } Gdma_le;
+#endif
 
 /*
  * Gtri/Tri: the gSP1Triangle macro packs w0 = (cmd << 24) |
